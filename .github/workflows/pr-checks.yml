@@ -1,0 +1,127 @@
+name: PR checks
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventions:
+    name: Conventions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR conventions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body ?? '';
+            const branchName = pr.head.ref;
+            const title = pr.title;
+            const errors = [];
+
+            const branchRegex = /^(feat|fix|chore|docs|test|refactor|ci|build|perf|style)\/(us-\d{3}-)?[a-z0-9]+(-[a-z0-9]+)*$/;
+            const titleRegex = /^(feat|fix|chore|docs|test|refactor|ci|build|perf|style)(\([a-z0-9-]+\))?!?: .+/;
+            const linkedIssueRegex = /\b(closes|fixes|resolves)\s+#\d+\b/i;
+            const requiredSections = [
+              '## 📝 What was done',
+              '## ✅ Acceptance criteria',
+              '## 🧪 How it was tested',
+              '## 🏁 Definition of Done',
+            ];
+
+            if (!branchRegex.test(branchName)) {
+              errors.push(
+                `Branch name "${branchName}" must match the project convention. ` +
+                  `Use a format such as "feat/us-103-stations-endpoint" or "chore/code-review-agent".`
+              );
+            } else if (/^(feat|fix)\//.test(branchName) && !/^(feat|fix)\/us-\d{3}-/.test(branchName)) {
+              errors.push(
+                `Branch name "${branchName}" is missing the required "us-XXX-" segment for feat/ or fix/ branches. ` +
+                  `Rename it to something like "feat/us-103-stations-endpoint".`
+              );
+            }
+
+            if (!titleRegex.test(title)) {
+              errors.push(
+                `PR title "${title}" must follow Conventional Commits. ` +
+                  `Use a title such as "feat: add stations endpoint" or "fix(api): handle null body".`
+              );
+            }
+
+            if (/^(feat|fix)\//.test(branchName) && !linkedIssueRegex.test(body)) {
+              errors.push(
+                `PRs from feat/ or fix/ branches must link the story in the body with "Closes #123", "Fixes #123", or "Resolves #123". ` +
+                  `Edit the PR description and add a line like "Closes #16".`
+              );
+            }
+
+            const missingSections = requiredSections.filter((section) => !body.includes(section));
+            if (missingSections.length > 0) {
+              errors.push(
+                `PR description is missing required template section(s): ${missingSections.join(', ')}. ` +
+                  `Edit the PR description and add the missing section heading(s).`
+              );
+            }
+
+            const dodHeading = '## 🏁 Definition of Done';
+            const dodStart = body.indexOf(dodHeading);
+            if (dodStart !== -1) {
+              const afterHeading = body.slice(dodStart + dodHeading.length);
+              const nextHeadingIndex = afterHeading.indexOf('\n## ');
+              const dodSection = nextHeadingIndex === -1 ? afterHeading : afterHeading.slice(0, nextHeadingIndex);
+              const uncheckedItems = dodSection.match(/^- \[ \] .+$/gm) ?? [];
+
+              if (uncheckedItems.length > 0) {
+                core.warning(
+                  `Definition of Done still has unchecked items:\n${uncheckedItems.join('\n')}\n` +
+                    'Complete them before merging.'
+                );
+              }
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            for (const commit of commits) {
+              const subject = (commit.commit.message ?? '').split('\n')[0].trim();
+              if (!subject || subject.startsWith('Merge ')) {
+                continue;
+              }
+
+              if (!titleRegex.test(subject)) {
+                errors.push(
+                  `Commit ${commit.sha.slice(0, 7)} "${subject}" does not follow Conventional Commits. ` +
+                    `Reword it to something like "ci: add PR checks" with "git rebase -i" and push again.`
+                );
+              }
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(['PR conventions check failed:', ...errors.map((error, index) => `${index + 1}. ${error}`)].join('\n'));
+            }
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

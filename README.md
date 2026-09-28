@@ -109,6 +109,16 @@ Work is organized into numbered user stories (`US-XXX`) grouped by milestone:
 - **Green CI** required before merging
 - Labels in use: `backend`, `frontend`, `database`, `infra`, `external-api`, `size:S`, `size:M`
 
+### Automated PR checks
+
+Pull requests are validated automatically for branch naming, Conventional Commit titles, linked issues for `feat/` and `fix/` branches, required PR template sections, commit-message format, and committed secrets.
+
+Common fixes:
+
+- Wrong commit message: use `git rebase -i` and reword the commit subject to a valid Conventional Commit.
+- Wrong branch name: rename it with `git branch -m`, push the new branch, and reopen the PR from the renamed branch.
+- Missing PR template section or story link: edit the PR description; the check reruns automatically after the PR title or body is updated.
+
 ### Definition of Done
 - [ ] Own branch + Pull Request
 - [ ] CI green
@@ -124,6 +134,7 @@ Work is organized into numbered user stories (`US-XXX`) grouped by milestone:
 2. Create a branch off `main` (e.g. `feat/us-103-stations-endpoint`)
 3. Implement it, satisfying every acceptance criterion in the issue
 4. Open a PR referencing the issue (`Closes #16`)
+5. Follow the [contributing guide](docs/contributing.md) to make the `Conventions` and `Secret scan` checks required on `main`
 
 ---
 
